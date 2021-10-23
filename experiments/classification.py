@@ -134,9 +134,12 @@ class ClassificationExperiment(Experiment):
         print('Start training ...')
 
         for ep in range(1, self.epochs + 1):
-            train_metrics = self.trainer.train(ep, self.train_datas)
-            # train_metrics = self.trainer.train_one(ep, self.train_datas[0])
+            # train_metrics = self.trainer.train(ep, self.train_datas)
+            train_metrics = self.trainer.train_one(ep, self.train_datas[0])
             
+            if ep % 2 == 0:
+                self.trainer.Fed_avg()
+
             if self.args['SWA'] and ep >= self.swa_start:
                 # Batchnorm update
                 self.optimizer.swap_swa_sgd()

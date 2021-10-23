@@ -102,5 +102,8 @@ class LeNet_passport(nn.Module):
         gamma = self.encoder(self.net1(self.passport_gamma)).mean()
         beta = self.encoder(self.net1(self.passport_beta)).mean()
 
+        gamma = 1. + (gamma - 1) * 0.01
+        beta /= 100
+
         y.mul_(gamma).add_(beta)
         return self.net2(y)

@@ -180,10 +180,10 @@ class Trainer(object):
             if end:
                 break
             
-            self.steps += 1
-            if self.steps == 10:
-                self.steps = 0
-                self.Fed_avg()
+            # self.steps += 1
+            # if self.steps == 10:
+            #     self.steps = 0
+            #     self.Fed_avg()
 
                 # loss_meter += loss.item()
                 # acc_meter += accuracy(pred, target)[0].item()
