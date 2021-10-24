@@ -15,7 +15,7 @@ from experiments.trainer_private import TesterPrivate
 #     load_normal_model_to_passport_model, load_normal_model_to_normal_model
 from models.alexnet_normal import AlexNetNormal
 from models.alexnet_passport import AlexNetPassport
-from models.resnet_normal import ResNet18, ResNet9
+from models.resnet_normal import ResNet18, ResNet18_pp, ResNet9
 from models.lenet import LeNet, LeNet_passport, ToyNet
 # from models.resnet import ResNet18
 from models.resnet_passport import ResNet18Passport, ResNet9Passport
@@ -82,7 +82,8 @@ class ClassificationExperiment(Experiment):
             if not self.args['passport']:
                 ResNetClass = ResNet18 if self.arch == 'resnet' else ResNet9
                 self.models = [ResNetClass(num_classes=self.num_classes, norm_type=self.norm_type).cuda() for _ in range(self.K)]
-
+            else:
+                self.models = [ResNet18_pp(num_classes=self.num_classes, norm_type=self.norm_type).cuda() for _ in range(self.K)]
         # load_pretrained()
 
         # pprint(self.model)
@@ -100,8 +101,11 @@ class ClassificationExperiment(Experiment):
         print('Start training ...')
 
         for ep in range(1, self.epochs + 1):
-            train_metrics = self.trainer.train(ep, self.train_datas)
-            # train_metrics = self.trainer.train_one(ep, self.train_datas[0])
+            if self.args['K'] == 1:
+                train_metrics = self.trainer.train_one(ep, self.train_datas[0])
+            else:
+                train_metrics = self.trainer.train(ep, self.train_datas)
+            
 
             if ep % self.args['avg_freq'] == 0:
                 self.trainer.Fed_avg()
