@@ -29,97 +29,63 @@ class ClassificationExperiment(Experiment):
     def __init__(self, args):
         super().__init__(args)
 
-        self.in_channels = 1 if self.dataset == 'mnist' else 3
-        self.num_classes = {
-            'cifar10': 10,
-            'cifar100': 100,
-            'caltech-101': 101,
-            'caltech-256': 256,
-            'imagenet1000': 1000,
-            'mnist': 10
-        }[self.dataset]
-
-        """
-        use mine data augumentation
-        """
-        self.train_datas, self.valid_data = prepare_dataset(self.args)
+        self.train_datas, self.valid_data, self.size, self.in_channels, self.num_classes = prep_dataloader(self.args)
+        # self.train_datas, self.valid_data = prepare_dataset(self.args)
         # self.train_datas, self.valid_data = toy_dataloader(self.args)
-        # self.train_data, self.valid_data = prep_dataloader(self.args)
 
-  
         self.construct_models()
-        
         self.construct_optimizers()
-
-
-        if len(self.lr_config['scheduler']) != 0:  # if no specify steps, then scheduler = None
-            self.schedulers = [optim.lr_scheduler.StepLR(optimizer, **self.lr_config['scheduler']) for optimizer in self.optimizers]
-        else:
-            self.schedulers = None
-
+        self.construct_lr_schedulers()
         self.trainer = Trainer(self.models, self.optimizers, self.schedulers, self.device)
-
         self.makedirs_or_load()
 
 
-    def construct_optimizers(self):
+    def construct_lr_schedulers(self):
+        self.schedulers = [getattr(optim.lr_scheduler, self.sched_config['scheduler'])(
+            optimizer,
+            **self.sched_config['sched_hparas']
+        )for optimizer in self.optimizers]
 
+
+    def construct_optimizers(self):
         # self.optimizers = [
         #     optim.SGD([
         #         {'params': model.encoder.parameters(), 'lr': 0.0001},
         #         {'params': model.net1.parameters()},
         #         {'params': model.net2.parameters()},
         #         ], **self.lr_config['optimizer']) 
-        #     for model in self.models]
+        #     for model in self.models
 
-        self.optimizers = [optim.SGD([
-                {'params': model.encoder.parameters(), 'lr': 0.01},
-                {'params': model.net1.parameters(), 'lr': 0.01},
-                {'params': model.net2.parameters(), 'lr': 0.01},
-        ], **self.lr_config['optimizer']) for model in self.models]
+        self.optimizers = [getattr(optim, self.lr_config['optimizer'])(
+            model.parameters(), 
+            **self.lr_config['optim_hparas']
+        )for model in self.models]
         
-        if self.args['SWA']:
-            print('SWA training ...')
-            SWA_config = getattr(lr_configs, self.args['SWA_config'])
-            steps_per_epoch = int(len(self.train_data.dataset) / self.args['batch_size'])
-            print("update per epoch:", steps_per_epoch)
-            self.swa_start = self.args['epochs'] * SWA_config['SWA_ratio']
-            self.optimizer = SWA(self.optimizer, swa_start=self.swa_start * steps_per_epoch,
-                            swa_freq=steps_per_epoch, swa_lr=SWA_config['SWA_lr'])
-            print(self.optimizer)
-        
-        elif self.args['LA']:
-            print('Lookahead training ...')
-            LA_config = getattr(lr_configs, self.args['LA_config'])
-            self.optimizer = Lookahead(self.optimizer, **LA_config)
-            print(self.optimizer)
 
     def construct_models(self):
         print('Construct Model ...')
 
-        def load_pretrained():
-            if self.pretrained_path is not None:
-                sd = torch.load(self.pretrained_path)
-                model.load_state_dict(sd)
-
-
-        self.is_baseline = True
+        # def load_pretrained():
+        #     if self.pretrained_path is not None:
+        #         sd = torch.load(self.pretrained_path)
+        #         model.load_state_dict(sd)
 
         if self.arch == 'alexnet':
             self.models = AlexNetNormal(self.in_channels, self.num_classes, self.norm_type)
         elif self.arch == 'lenet':
-            self.models = [LeNet_passport(self.in_channels, self.num_classes).cuda() for _ in range(self.K)]
-            # self.models = [LeNet(self.in_channels, self.num_classes).cuda() for _ in range(self.K)]
-            # self.models = [ToyNet().cuda() for _ in range(self.K)]
-        else:
-            ResNetClass = ResNet18 if self.arch == 'resnet' else ResNet9
-            model = ResNetClass(num_classes=self.num_classes, norm_type=self.norm_type)
+            if self.args['passport']:
+                self.models = [LeNet_passport(self.in_channels, self.num_classes).cuda() for _ in range(self.K)]
+            else:
+                self.models = [LeNet(self.in_channels, self.num_classes).cuda() for _ in range(self.K)]
+                # self.models = [ToyNet().cuda() for _ in range(self.K)]
+        elif self.arch == 'resnet':
+            if not self.args['passport']:
+                ResNetClass = ResNet18 if self.arch == 'resnet' else ResNet9
+                self.models = [ResNetClass(num_classes=self.num_classes, norm_type=self.norm_type).cuda() for _ in range(self.K)]
 
-        load_pretrained()
-        # self.model = model.to(self.device)
+        # load_pretrained()
 
         # pprint(self.model)
-
 
 
     def training(self):
@@ -134,27 +100,14 @@ class ClassificationExperiment(Experiment):
         print('Start training ...')
 
         for ep in range(1, self.epochs + 1):
-            # train_metrics = self.trainer.train(ep, self.train_datas)
-            train_metrics = self.trainer.train_one(ep, self.train_datas[0])
-            
-            if ep % 2 == 0:
+            train_metrics = self.trainer.train(ep, self.train_datas)
+            # train_metrics = self.trainer.train_one(ep, self.train_datas[0])
+
+            if ep % self.args['avg_freq'] == 0:
                 self.trainer.Fed_avg()
 
-            if self.args['SWA'] and ep >= self.swa_start:
-                # Batchnorm update
-                self.optimizer.swap_swa_sgd()
-                self.optimizer.bn_update(self.train_data, self.model, device='cuda')
-                valid_metrics = self.trainer.test(self.valid_data, 'Testing Result')
-                self.optimizer.swap_swa_sgd()
-            
-            elif self.args['LA']:
-                self.optimizer._backup_and_load_cache()
-                valid_metrics = self.trainer.test(self.valid_data, 'Testing Result')
-                self.optimizer._clear_and_load_backup()
-            else:
-                valid_metrics = self.trainer.test(self.valid_data, 'Testing Result')
+            valid_metrics = self.trainer.test(self.valid_data, 'Testing Result')
 
-           
             metrics = {'epoch': ep}
             # for key in train_metrics: metrics[f'train_{key}'] = train_metrics[key]
             for key in valid_metrics: metrics[f'valid_{key}'] = valid_metrics[key]

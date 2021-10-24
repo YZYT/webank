@@ -4,66 +4,70 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 from torch.optim.lr_scheduler import MultiStepLR
-
+from torch.utils.data import DataLoader, Dataset
 from torchvision.utils import make_grid
 from torchvision import datasets, transforms
 import numpy as np
 
 def prep_dataloader(args):
+    ds = args['dataset']
+    mean = {
+        'cifar100': (0.5071, 0.4865, 0.4409),
+        'cifar10': (0.4914, 0.4822, 0.4465),
+        'mnist': (0.1307,)
+    }[ds]
+
+    std = {
+        'cifar100': (0.2673, 0.2564, 0.2762),
+        'cifar10': (0.2023, 0.1994, 0.2010),
+        'mnist': (0.3081,)
+    }[ds]
+
+    size = {
+        'cifar100': 32,
+        'cifar10': 32,
+        'mnist': 28
+    }[ds]
+
+    in_channels = 1 if ds == 'mnist' else 3
+
+    num_classes = {
+        'cifar100': 100,
+        'cifar10': 10,
+        'mnist': 10
+    }[ds]
 
 
-    normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                                    std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+    trans = [transforms.ToTensor(), transforms.Normalize(mean, std)]
+    transform_test = transforms.Compose(trans)
 
-    train_transform = transforms.Compose([])
+    if ds != 'mnist':
+        trans.insert(0, transforms.RandomCrop(size, padding=4))
+        trans.insert(1, transforms.RandomHorizontalFlip())
 
-    train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
-    train_transform.transforms.append(transforms.RandomHorizontalFlip())
-    
-    train_transform.transforms.append(transforms.ToTensor())
-    train_transform.transforms.append(normalize)
+    transform_train = transforms.Compose(trans)
 
-    test_transform = transforms.Compose([
-        transforms.ToTensor(),
-        normalize])
+    train_dataset = getattr(datasets, ds.upper())(f'data/{ds}', train=True, download=True, transform=transform_train)
+    test_dataset = getattr(datasets, ds.upper())(f'data/{ds}', train=False, download=True, transform=transform_test)
 
-    if args['dataset'] == 'cifar10':
-        num_classes = 10
-        train_dataset = datasets.CIFAR10(root='data/cifar10',
-                                        train=True,
-                                        transform=train_transform,
-                                        download=True)
+    if args['K'] == 1:
+        train_datasets = [train_dataset]
+    else:
+        splits = []
+        size = len(train_dataset) // args['K']
+        for _ in range(args['K'] - 1):
+            splits.append(size)
+        splits.append(len(train_dataset) - size * (args['K'] - 1))
 
-        test_dataset = datasets.CIFAR10(root='data/cifar10',
-                                        train=False,
-                                        transform=test_transform,
-                                        download=True)
-    elif args['dataset'] == 'cifar100':
-        num_classes = 100
-        train_dataset = datasets.CIFAR100(root='data/cifar100',
-                                        train=True,
-                                        transform=train_transform,
-                                        download=True)
+        train_datasets = torch.utils.data.random_split(train_dataset, splits)
 
-        test_dataset = datasets.CIFAR100(root='data/cifar100',
-                                        train=False,
-                                        transform=test_transform,
-                                        download=True)
 
-    # Data Loader (Input Pipeline)
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                            batch_size=args['batch_size'],
-                                            shuffle=True,
-                                            pin_memory=True,
-                                            num_workers=2)
+    train_loaders = [DataLoader(train_dataset, args['batch_size'], shuffle=True,
+                                num_workers=0) for train_dataset in train_datasets]
+    test_loader = DataLoader(test_dataset, args['batch_size'], shuffle=False,
+                            num_workers=0)
 
-    test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
-                                            batch_size=args['batch_size'],
-                                            shuffle=False,
-                                            pin_memory=True,
-                                            num_workers=2)
-    
-    return train_loader, test_loader
+    return train_loaders, test_loader, size, in_channels, num_classes
 
 
 def toy_dataloader(args):

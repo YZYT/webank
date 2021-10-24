@@ -171,11 +171,10 @@ class Trainer(object):
                 optimizer.zero_grad()
                 pred = model(data)
                 loss = F.cross_entropy(pred, target)
-                # loss = torch.nn.MSELoss()(pred.reshape(target.shape), target)
-                # print(float(loss))
+
                 loss.backward()
                 optimizer.step()
-                # print(loss)
+
 
             if end:
                 break

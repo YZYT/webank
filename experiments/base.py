@@ -42,8 +42,8 @@ class Experiment(object):
         self.eval = args['eval']
         self.tag = args['tag']
         self.save_interval = args['save_interval']
-        # self.lr_config = json.load(open(args['lr_config']))
         self.lr_config = getattr(lr_configs, args['lr_config'])
+        self.sched_config = getattr(lr_configs, args['sched_config'])
         self.pretrained_path = args['pretrained_path']
 
         self.norm_type = args['norm_type']

@@ -1,25 +1,37 @@
+from torch.optim import lr_scheduler
+
+
 SGD_config = {
-  'optimizer':{
-    "lr": 0.1, 
-    "momentum": 0.9,
-    "nesterov": True,
-    'weight_decay': 5e-4
+  'optimizer': 'SGD',
+  'optim_hparas':{
+      "lr": 0.1, 
+      "momentum": 0.9,
+      "nesterov": True,
+      'weight_decay': 5e-4
   },
-  'scheduler':{
+}
+
+MultiStep_config = {
+  'scheduler': 'MultiStepLR',
+  'sched_hparas':{
       "milestones": [60, 120, 160],
       "gamma": 0.2
   }
 }
 
 SGD_config_lenet = {
-  'optimizer':{
+  'optimizer': 'SGD',
+  'optim_hparas':{
     "lr": 0.01, 
     "momentum": 0.9,
     "nesterov": True,
     # 'weight_decay': 5e-4
   },
+}
 
-  'scheduler':{
+Step_config = {
+  'scheduler': 'StepLR',
+  'sched_hparas':{
       'step_size': 5,
       'gamma': 0.9
   }
